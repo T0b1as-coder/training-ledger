@@ -7,7 +7,11 @@ project for working with Claude Code / vibe coding.
 
 - **Log** — record a strength session (exercises, with sets of reps × weight)
   or a cardio session (activity, duration, distance — pace is calculated for you).
-- **History** — every session, grouped by date, with edit and delete.
+- **Calendar** — a monthly view of your training. Plan a strength or cardio
+  session ahead of time for any date (same level of detail as logging), see
+  planned vs. completed sessions at a glance, and turn a plan into a real log
+  entry with "Log now" once you've done it.
+- **History** — every completed session, grouped by date, with edit and delete.
 - **Progress** — a day streak, this week's stats, and a trend chart per exercise
   (max weight or total volume) and per cardio activity (distance, duration, or pace).
 

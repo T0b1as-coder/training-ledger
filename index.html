@@ -179,6 +179,30 @@
 
   .app-footer{ text-align:center; color:var(--ink-muted); font-size:0.76rem; margin-top:2rem; }
 
+  .calendar-toolbar{ display:flex; align-items:center; gap:0.6rem; margin-bottom:0.7rem; }
+  .calendar-month-label{ flex:1; font-size:1.2rem; text-align:center; }
+  .calendar-toolbar .btn{ flex:none; }
+  .calendar-legend{ display:flex; flex-wrap:wrap; gap:0.9rem; font-size:0.76rem; color:var(--ink-muted); margin-bottom:0.8rem; }
+  .calendar-legend span{ display:inline-flex; align-items:center; gap:0.35rem; }
+  .calendar-weekdays{ display:grid; grid-template-columns:repeat(7,1fr); text-align:center; font-size:0.72rem; color:var(--ink-muted); text-transform:uppercase; letter-spacing:0.03em; margin-bottom:0.3rem; }
+  .calendar-cells{ display:grid; grid-template-columns:repeat(7,1fr); gap:0.3rem; }
+  .calendar-cell{ appearance:none; border:1px solid var(--border); background:var(--surface-card); border-radius:10px; padding:0.4rem 0.3rem; min-height:3.4rem; display:flex; flex-direction:column; align-items:center; gap:0.25rem; cursor:pointer; color:var(--ink-primary); }
+  .calendar-cell:hover{ background:var(--surface-sunken); }
+  .calendar-cell.other-month{ opacity:0.4; }
+  .calendar-cell.is-today .calendar-day-num{ color:var(--accent-cardio); font-weight:700; }
+  .calendar-cell.is-selected{ border-color:var(--ink-primary); box-shadow:var(--shadow); }
+  .calendar-day-num{ font-family:'IBM Plex Mono',monospace; font-size:0.85rem; }
+  .calendar-dots{ display:flex; gap:0.2rem; min-height:0.5rem; }
+  .cal-dot{ width:0.42rem; height:0.42rem; border-radius:999px; display:inline-block; background:transparent; border:1.5px solid var(--ink-muted); flex:none; }
+  .cal-dot.done.strength{ background:var(--accent-strength); border-color:var(--accent-strength); }
+  .cal-dot.done.cardio{ background:var(--accent-cardio); border-color:var(--accent-cardio); }
+  .cal-dot.planned{ border-color:var(--ink-secondary); background:transparent; }
+  .cal-dot.planned.overdue{ border-color:var(--danger); }
+  .calendar-day-panel{ margin-top:1rem; }
+  .calendar-day-heading{ font-size:1rem; margin-bottom:0.6rem; }
+  .calendar-add-row{ display:flex; gap:0.5rem; flex-wrap:wrap; margin-top:0.6rem; }
+  .planned-item{ border-style:dashed; }
+
   .modal-overlay{ position:fixed; inset:0; background:rgba(10,12,12,0.5); display:flex; align-items:flex-end; justify-content:center; padding:0; z-index:20; }
   @media (min-width:560px){ .modal-overlay{ align-items:center; } }
   .modal{ background:var(--surface-card); border-radius:16px 16px 0 0; padding:1.2rem; width:100%; max-width:520px; max-height:88vh; overflow-y:auto; box-shadow:var(--shadow); }
@@ -212,6 +236,7 @@
 
   <nav class="tab-rail" role="tablist" aria-label="Sections">
     <button class="tab-btn active" data-tab="log" role="tab" aria-selected="true">Log</button>
+    <button class="tab-btn" data-tab="calendar" role="tab" aria-selected="false">Calendar</button>
     <button class="tab-btn" data-tab="history" role="tab" aria-selected="false">History</button>
     <button class="tab-btn" data-tab="progress" role="tab" aria-selected="false">Progress</button>
   </nav>
@@ -259,6 +284,23 @@
           <button type="submit" class="btn primary" id="cardioSubmitBtn">Save cardio</button>
         </div>
       </form>
+    </section>
+
+    <section id="view-calendar" class="view">
+      <div class="calendar-toolbar">
+        <button type="button" class="icon-btn" id="calPrevMonth" aria-label="Previous month">‹</button>
+        <h2 id="calMonthLabel" class="calendar-month-label"></h2>
+        <button type="button" class="icon-btn" id="calNextMonth" aria-label="Next month">›</button>
+        <button type="button" class="btn ghost small" id="calTodayBtn">Today</button>
+      </div>
+      <div class="calendar-legend">
+        <span><i class="cal-dot done strength" aria-hidden="true"></i>Strength done</span>
+        <span><i class="cal-dot done cardio" aria-hidden="true"></i>Cardio done</span>
+        <span><i class="cal-dot planned" aria-hidden="true"></i>Planned</span>
+        <span><i class="cal-dot planned overdue" aria-hidden="true"></i>Overdue</span>
+      </div>
+      <div class="calendar-grid" id="calendarGrid"></div>
+      <div id="calendarDayPanel" class="calendar-day-panel"></div>
     </section>
 
     <section id="view-history" class="view">
@@ -413,7 +455,7 @@
   // ---------- storage ----------
   const STORAGE_KEY = 'trainingLedger.v1';
   let storageAvailable = true;
-  let data = { strength: [], cardio: [] };
+  let data = { strength: [], cardio: [], planned: [] };
 
   function loadData(){
     try{
@@ -422,6 +464,7 @@
         const parsed = JSON.parse(raw);
         if(parsed && Array.isArray(parsed.strength) && Array.isArray(parsed.cardio)){
           data = parsed;
+          if(!Array.isArray(data.planned)) data.planned = [];
         }
       }
     }catch(e){
@@ -482,7 +525,10 @@
     selectedExercise: null,
     strengthMetric: 'max',
     selectedActivity: null,
-    cardioMetric: 'distance'
+    cardioMetric: 'distance',
+    calendarYear: new Date().getFullYear(),
+    calendarMonth: new Date().getMonth(),
+    selectedCalendarDate: todayISO()
   };
 
   // ============================================================
@@ -500,6 +546,7 @@
       $('view-' + state.activeTab).classList.add('active');
       if(state.activeTab === 'history') renderHistory();
       if(state.activeTab === 'progress') renderProgress();
+      if(state.activeTab === 'calendar') renderCalendar();
     });
   });
 
@@ -618,7 +665,20 @@
       return;
     }
     const note = $('strengthNote').value.trim();
-    if(state.editing && state.editing.type === 'strength'){
+    if(state.editing && state.editing.type === 'strength' && state.editing.source === 'planned'){
+      if(state.editing.complete){
+        data.planned = data.planned.filter(p => p.id !== state.editing.id);
+        data.strength.push({ id: uid(), date: dateVal, exercises, note });
+        showToast('Workout logged.');
+      } else if(state.editing.id){
+        const rec = data.planned.find(p => p.id === state.editing.id);
+        if(rec){ rec.date = dateVal; rec.exercises = exercises; rec.note = note; }
+        showToast('Plan updated.');
+      } else {
+        data.planned.push({ id: uid(), type:'strength', date: dateVal, exercises, note });
+        showToast('Workout planned.');
+      }
+    } else if(state.editing && state.editing.type === 'strength'){
       const rec = data.strength.find(s => s.id === state.editing.id);
       if(rec){ rec.date = dateVal; rec.exercises = exercises; rec.note = note; }
       showToast('Workout updated.');
@@ -680,7 +740,20 @@
       return;
     }
     const note = $('cardioNote').value.trim();
-    if(state.editing && state.editing.type === 'cardio'){
+    if(state.editing && state.editing.type === 'cardio' && state.editing.source === 'planned'){
+      if(state.editing.complete){
+        data.planned = data.planned.filter(p => p.id !== state.editing.id);
+        data.cardio.push({ id: uid(), date: dateVal, activity, duration, distance, note });
+        showToast('Cardio session logged.');
+      } else if(state.editing.id){
+        const rec = data.planned.find(p => p.id === state.editing.id);
+        if(rec){ rec.date = dateVal; rec.activity = activity; rec.duration = duration; rec.distance = distance; rec.note = note; }
+        showToast('Plan updated.');
+      } else {
+        data.planned.push({ id: uid(), type:'cardio', date: dateVal, activity, duration, distance, note });
+        showToast('Cardio session planned.');
+      }
+    } else if(state.editing && state.editing.type === 'cardio'){
       const rec = data.cardio.find(s => s.id === state.editing.id);
       if(rec){ rec.date = dateVal; rec.activity = activity; rec.duration = duration; rec.distance = distance; rec.note = note; }
       showToast('Cardio session updated.');
@@ -697,21 +770,25 @@
   // ============================================================
   // EDIT / DELETE from history
   // ============================================================
+  function switchToLogTab(){
+    document.querySelectorAll('.tab-btn').forEach(b => { const on=b.dataset.tab==='log'; b.classList.toggle('active',on); b.setAttribute('aria-selected', on?'true':'false'); });
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    $('view-log').classList.add('active');
+  }
   function beginEditStrength(rec){
     state.logType = 'strength';
     document.querySelectorAll('.log-type-toggle .pill').forEach(b => b.classList.toggle('active', b.dataset.logtype==='strength'));
     $('strengthForm').hidden = false;
     $('cardioForm').hidden = true;
-    document.querySelectorAll('.tab-btn').forEach(b => { const on=b.dataset.tab==='log'; b.classList.toggle('active',on); b.setAttribute('aria-selected', on?'true':'false'); });
-    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
-    $('view-log').classList.add('active');
+    switchToLogTab();
 
     $('strengthDate').value = rec.date;
     $('strengthNote').value = rec.note || '';
     clear(exerciseList);
     rec.exercises.forEach(ex => addExerciseBlock(ex));
-    state.editing = { type:'strength', id: rec.id };
+    state.editing = { type:'strength', id: rec.id, source:'log' };
     $('cancelStrengthEdit').hidden = false;
+    $('cancelStrengthEdit').textContent = 'Cancel edit';
     $('strengthSubmitBtn').textContent = 'Update workout';
     window.scrollTo({top:0, behavior:'smooth'});
   }
@@ -720,9 +797,7 @@
     document.querySelectorAll('.log-type-toggle .pill').forEach(b => b.classList.toggle('active', b.dataset.logtype==='cardio'));
     $('strengthForm').hidden = true;
     $('cardioForm').hidden = false;
-    document.querySelectorAll('.tab-btn').forEach(b => { const on=b.dataset.tab==='log'; b.classList.toggle('active',on); b.setAttribute('aria-selected', on?'true':'false'); });
-    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
-    $('view-log').classList.add('active');
+    switchToLogTab();
 
     $('cardioDate').value = rec.date;
     const known = ['Run','Bike','Swim','Row','Walk'];
@@ -738,11 +813,80 @@
     $('cardioDistance').value = rec.distance == null ? '' : rec.distance;
     $('cardioNote').value = rec.note || '';
     updatePaceHint();
-    state.editing = { type:'cardio', id: rec.id };
+    state.editing = { type:'cardio', id: rec.id, source:'log' };
     $('cancelCardioEdit').hidden = false;
+    $('cancelCardioEdit').textContent = 'Cancel edit';
     $('cardioSubmitBtn').textContent = 'Update cardio';
     window.scrollTo({top:0, behavior:'smooth'});
   }
+
+  // ---- Planning: open the Log forms in "plan ahead" / "complete a plan" mode ----
+  function beginPlanStrength(dateISO, existingRec, completeMode){
+    state.logType = 'strength';
+    document.querySelectorAll('.log-type-toggle .pill').forEach(b => b.classList.toggle('active', b.dataset.logtype==='strength'));
+    $('strengthForm').hidden = false;
+    $('cardioForm').hidden = true;
+    switchToLogTab();
+
+    $('strengthDate').value = existingRec ? existingRec.date : dateISO;
+    $('strengthNote').value = existingRec ? (existingRec.note || '') : '';
+    clear(exerciseList);
+    if(existingRec && existingRec.exercises && existingRec.exercises.length){
+      existingRec.exercises.forEach(ex => addExerciseBlock(ex));
+    } else {
+      addExerciseBlock();
+    }
+    state.editing = { type:'strength', id: existingRec ? existingRec.id : null, source:'planned', complete: !!completeMode };
+    $('cancelStrengthEdit').hidden = false;
+    $('cancelStrengthEdit').textContent = 'Cancel';
+    $('strengthSubmitBtn').textContent = completeMode ? 'Log this workout' : (existingRec ? 'Update plan' : 'Save plan');
+    window.scrollTo({top:0, behavior:'smooth'});
+  }
+  function beginPlanCardio(dateISO, existingRec, completeMode){
+    state.logType = 'cardio';
+    document.querySelectorAll('.log-type-toggle .pill').forEach(b => b.classList.toggle('active', b.dataset.logtype==='cardio'));
+    $('strengthForm').hidden = true;
+    $('cardioForm').hidden = false;
+    switchToLogTab();
+
+    const rec = existingRec;
+    $('cardioDate').value = rec ? rec.date : dateISO;
+    if(rec){
+      const known = ['Run','Bike','Swim','Row','Walk'];
+      if(known.includes(rec.activity)){
+        $('cardioActivity').value = rec.activity;
+        $('cardioOtherRow').hidden = true;
+      } else {
+        $('cardioActivity').value = 'Other';
+        $('cardioOtherRow').hidden = false;
+        $('cardioActivityOther').value = rec.activity;
+      }
+      $('cardioDuration').value = rec.duration;
+      $('cardioDistance').value = rec.distance == null ? '' : rec.distance;
+      $('cardioNote').value = rec.note || '';
+    } else {
+      $('cardioActivity').value = 'Run';
+      $('cardioOtherRow').hidden = true;
+      $('cardioActivityOther').value = '';
+      $('cardioDuration').value = '';
+      $('cardioDistance').value = '';
+      $('cardioNote').value = '';
+    }
+    updatePaceHint();
+    state.editing = { type:'cardio', id: rec ? rec.id : null, source:'planned', complete: !!completeMode };
+    $('cancelCardioEdit').hidden = false;
+    $('cancelCardioEdit').textContent = 'Cancel';
+    $('cardioSubmitBtn').textContent = completeMode ? 'Log this workout' : (rec ? 'Update plan' : 'Save plan');
+    window.scrollTo({top:0, behavior:'smooth'});
+  }
+  function deletePlanned(id){
+    data.planned = data.planned.filter(p => p.id !== id);
+    saveData();
+    state.pendingDeleteKey = null;
+    showToast('Planned session removed.');
+    renderAll();
+  }
+
   function deleteRecord(type, id){
     if(type === 'strength') data.strength = data.strength.filter(r => r.id !== id);
     else data.cardio = data.cardio.filter(r => r.id !== id);
@@ -833,6 +977,169 @@
       });
       list.appendChild(groupEl);
     }
+  }
+
+  // ============================================================
+  // CALENDAR VIEW
+  // ============================================================
+  const monthYearFmt = new Intl.DateTimeFormat(undefined, { month:'long', year:'numeric' });
+  const weekdayShortFmt = new Intl.DateTimeFormat(undefined, { weekday:'short' });
+  const calendarDayHeadingFmt = new Intl.DateTimeFormat(undefined, { weekday:'long', day:'numeric', month:'long' });
+
+  function plannedForDate(iso){ return data.planned.filter(p => p.date === iso); }
+  function completedStrengthForDate(iso){ return data.strength.filter(r => r.date === iso); }
+  function completedCardioForDate(iso){ return data.cardio.filter(r => r.date === iso); }
+
+  function goToCalendarMonth(year, month){
+    const d = new Date(year, month, 1);
+    state.calendarYear = d.getFullYear();
+    state.calendarMonth = d.getMonth();
+    renderCalendar();
+  }
+  $('calPrevMonth').addEventListener('click', () => goToCalendarMonth(state.calendarYear, state.calendarMonth - 1));
+  $('calNextMonth').addEventListener('click', () => goToCalendarMonth(state.calendarYear, state.calendarMonth + 1));
+  $('calTodayBtn').addEventListener('click', () => {
+    const t = new Date();
+    state.selectedCalendarDate = todayISO();
+    goToCalendarMonth(t.getFullYear(), t.getMonth());
+  });
+
+  function selectCalendarDate(iso){
+    state.selectedCalendarDate = iso;
+    renderCalendar();
+  }
+
+  function renderCalendarGrid(){
+    const grid = $('calendarGrid');
+    clear(grid);
+    $('calMonthLabel').textContent = monthYearFmt.format(new Date(state.calendarYear, state.calendarMonth, 1));
+
+    const headRow = el('div',{class:'calendar-weekdays'});
+    const monday = startOfWeek(new Date());
+    for(let i=0;i<7;i++){
+      const d = new Date(monday); d.setDate(monday.getDate()+i);
+      headRow.appendChild(el('span',{}, weekdayShortFmt.format(d)));
+    }
+    grid.appendChild(headRow);
+
+    const firstOfMonth = new Date(state.calendarYear, state.calendarMonth, 1);
+    const leading = (firstOfMonth.getDay() + 6) % 7; // Monday-start offset
+    const daysInThisMonth = new Date(state.calendarYear, state.calendarMonth+1, 0).getDate();
+    const totalCells = Math.ceil((leading + daysInThisMonth) / 7) * 7;
+
+    const cellsWrap = el('div',{class:'calendar-cells'});
+    const todayIso = todayISO();
+
+    for(let i=0;i<totalCells;i++){
+      const dayNum = i - leading + 1;
+      const cellDate = new Date(state.calendarYear, state.calendarMonth, dayNum);
+      const iso = toISODate(cellDate);
+      const inMonth = cellDate.getMonth() === state.calendarMonth;
+
+      const planned = plannedForDate(iso);
+      const hasStrengthDone = completedStrengthForDate(iso).length > 0;
+      const hasCardioDone = completedCardioForDate(iso).length > 0;
+      const isOverdue = planned.length > 0 && iso < todayIso;
+
+      const dots = el('div',{class:'calendar-dots'});
+      if(hasStrengthDone) dots.appendChild(el('span',{class:'cal-dot done strength', title:'Strength completed'}));
+      if(hasCardioDone) dots.appendChild(el('span',{class:'cal-dot done cardio', title:'Cardio completed'}));
+      if(planned.length) dots.appendChild(el('span',{class:'cal-dot planned' + (isOverdue?' overdue':''), title: isOverdue ? 'Overdue planned session' : 'Planned session'}));
+
+      const cell = el('button',{
+          type:'button',
+          class:'calendar-cell'
+            + (inMonth ? '' : ' other-month')
+            + (iso === todayIso ? ' is-today' : '')
+            + (iso === state.selectedCalendarDate ? ' is-selected' : ''),
+          onclick:()=>selectCalendarDate(iso)
+        },
+        el('span',{class:'calendar-day-num'}, String(cellDate.getDate())),
+        dots
+      );
+      cellsWrap.appendChild(cell);
+    }
+    grid.appendChild(cellsWrap);
+  }
+
+  function renderCalendarDayPanel(){
+    const panel = $('calendarDayPanel');
+    clear(panel);
+    const iso = state.selectedCalendarDate || todayISO();
+
+    panel.appendChild(el('h3',{class:'calendar-day-heading'}, calendarDayHeadingFmt.format(parseISO(iso))));
+
+    const completed = []
+      .concat(completedStrengthForDate(iso).map(r => ({...r, _type:'strength'})))
+      .concat(completedCardioForDate(iso).map(r => ({...r, _type:'cardio'})));
+    const planned = plannedForDate(iso);
+
+    if(!completed.length && !planned.length){
+      panel.appendChild(el('div',{class:'history-empty'}, 'Nothing logged or planned for this day yet.'));
+    }
+
+    completed.forEach(rec => {
+      const isStrength = rec._type === 'strength';
+      const key = rec._type + ':' + rec.id;
+      const chip = el('span',{class:'type-chip ' + rec._type, 'aria-hidden':'true'}, isStrength ? '🏋️' : '🏃');
+      const title = el('p',{class:'history-title'}, (isStrength ? 'Strength' : rec.activity) + ' — completed');
+      const detail = el('p',{class:'history-detail'}, isStrength ? strengthSummaryLine(rec) : cardioSummaryLine(rec));
+      const contentChildren = [title, detail];
+      if(rec.note) contentChildren.push(el('p',{class:'history-note'}, rec.note));
+      const content = el('div',{class:'history-content'}, contentChildren);
+      let actions;
+      if(state.pendingDeleteKey === key){
+        actions = el('div',{class:'confirm-row'},
+          el('span',{},'Delete?'),
+          el('button',{class:'btn ghost small', onclick:()=>deleteRecord(rec._type, rec.id)}, 'Yes'),
+          el('button',{class:'btn ghost small', onclick:()=>{ state.pendingDeleteKey=null; renderCalendarDayPanel(); }}, 'No')
+        );
+      } else {
+        actions = el('div',{class:'history-actions'},
+          el('button',{class:'icon-btn', 'aria-label':'Edit entry', title:'Edit', onclick:()=> isStrength ? beginEditStrength(rec) : beginEditCardio(rec)}, '✎'),
+          el('button',{class:'icon-btn', 'aria-label':'Delete entry', title:'Delete', onclick:()=>{ state.pendingDeleteKey = key; renderCalendarDayPanel(); }}, '✕')
+        );
+      }
+      panel.appendChild(el('div',{class:'history-item'}, chip, content, actions));
+    });
+
+    planned.forEach(rec => {
+      const isStrength = rec.type === 'strength';
+      const key = 'planned:' + rec.id;
+      const overdue = iso < todayISO();
+      const chip = el('span',{class:'type-chip ' + rec.type, 'aria-hidden':'true'}, isStrength ? '🏋️' : '🏃');
+      const title = el('p',{class:'history-title'}, (isStrength ? 'Strength' : rec.activity) + (overdue ? ' — planned (overdue)' : ' — planned'));
+      const detail = el('p',{class:'history-detail'}, isStrength ? strengthSummaryLine(rec) : cardioSummaryLine(rec));
+      const contentChildren = [title, detail];
+      if(rec.note) contentChildren.push(el('p',{class:'history-note'}, rec.note));
+      const content = el('div',{class:'history-content'}, contentChildren);
+      let actions;
+      if(state.pendingDeleteKey === key){
+        actions = el('div',{class:'confirm-row'},
+          el('span',{},'Remove plan?'),
+          el('button',{class:'btn ghost small', onclick:()=>deletePlanned(rec.id)}, 'Yes'),
+          el('button',{class:'btn ghost small', onclick:()=>{ state.pendingDeleteKey=null; renderCalendarDayPanel(); }}, 'No')
+        );
+      } else {
+        actions = el('div',{class:'history-actions'},
+          el('button',{class:'btn ghost small', onclick:()=> isStrength ? beginPlanStrength(rec.date, rec, true) : beginPlanCardio(rec.date, rec, true)}, 'Log now'),
+          el('button',{class:'icon-btn', 'aria-label':'Edit plan', title:'Edit plan', onclick:()=> isStrength ? beginPlanStrength(rec.date, rec, false) : beginPlanCardio(rec.date, rec, false)}, '✎'),
+          el('button',{class:'icon-btn', 'aria-label':'Delete plan', title:'Delete plan', onclick:()=>{ state.pendingDeleteKey = key; renderCalendarDayPanel(); }}, '✕')
+        );
+      }
+      panel.appendChild(el('div',{class:'history-item planned-item'}, chip, content, actions));
+    });
+
+    const addRow = el('div',{class:'calendar-add-row'},
+      el('button',{class:'btn ghost small', onclick:()=>beginPlanStrength(iso, null, false)}, '+ Plan strength'),
+      el('button',{class:'btn ghost small', onclick:()=>beginPlanCardio(iso, null, false)}, '+ Plan cardio')
+    );
+    panel.appendChild(addRow);
+  }
+
+  function renderCalendar(){
+    renderCalendarGrid();
+    renderCalendarDayPanel();
   }
 
   // ============================================================
@@ -1168,7 +1475,7 @@
       if(!parsed || !Array.isArray(parsed.strength) || !Array.isArray(parsed.cardio)){
         throw new Error('shape');
       }
-      data = { strength: parsed.strength, cardio: parsed.cardio };
+      data = { strength: parsed.strength, cardio: parsed.cardio, planned: Array.isArray(parsed.planned) ? parsed.planned : [] };
       saveData();
       refreshExerciseDatalist();
       renderAll();
@@ -1187,6 +1494,7 @@
     $('streakValue').textContent = String(computeStreak());
     if(state.activeTab === 'history') renderHistory();
     if(state.activeTab === 'progress') renderProgress();
+    if(state.activeTab === 'calendar') renderCalendar();
   }
 
   loadData();
