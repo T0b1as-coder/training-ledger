@@ -1,0 +1,11 @@
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Editor cruft
+.vscode/
+*.swp
+
+# Just in case a future version adds tooling
+node_modules/
+.env
