@@ -252,6 +252,9 @@
         <div class="field-row">
           <label>Date<input type="date" id="strengthDate" required></label>
         </div>
+        <div class="field-row">
+          <label>Title (optional)<input type="text" id="strengthTitle" placeholder="e.g. Maximum Strength" autocomplete="off"></label>
+        </div>
         <div id="exerciseList" class="exercise-list"></div>
         <button type="button" id="addExerciseBtn" class="btn ghost">+ Add exercise</button>
         <label class="field-note">Notes (optional)<textarea id="strengthNote" rows="2" placeholder="How did it feel?"></textarea></label>
@@ -269,6 +272,9 @@
               <option>Run</option><option>Bike</option><option>Swim</option><option>Row</option><option>Walk</option><option>Other</option>
             </select>
           </label>
+        </div>
+        <div class="field-row">
+          <label>Title (optional)<input type="text" id="cardioTitle" placeholder="e.g. Hill session" autocomplete="off"></label>
         </div>
         <div class="field-row" id="cardioOtherRow" hidden>
           <label>Activity name<input type="text" id="cardioActivityOther" placeholder="e.g. Hike"></label>
@@ -665,25 +671,26 @@
       return;
     }
     const note = $('strengthNote').value.trim();
+    const title = $('strengthTitle').value.trim();
     if(state.editing && state.editing.type === 'strength' && state.editing.source === 'planned'){
       if(state.editing.complete){
         data.planned = data.planned.filter(p => p.id !== state.editing.id);
-        data.strength.push({ id: uid(), date: dateVal, exercises, note });
+        data.strength.push({ id: uid(), date: dateVal, title, exercises, note });
         showToast('Workout logged.');
       } else if(state.editing.id){
         const rec = data.planned.find(p => p.id === state.editing.id);
-        if(rec){ rec.date = dateVal; rec.exercises = exercises; rec.note = note; }
+        if(rec){ rec.date = dateVal; rec.title = title; rec.exercises = exercises; rec.note = note; }
         showToast('Plan updated.');
       } else {
-        data.planned.push({ id: uid(), type:'strength', date: dateVal, exercises, note });
+        data.planned.push({ id: uid(), type:'strength', date: dateVal, title, exercises, note });
         showToast('Workout planned.');
       }
     } else if(state.editing && state.editing.type === 'strength'){
       const rec = data.strength.find(s => s.id === state.editing.id);
-      if(rec){ rec.date = dateVal; rec.exercises = exercises; rec.note = note; }
+      if(rec){ rec.date = dateVal; rec.title = title; rec.exercises = exercises; rec.note = note; }
       showToast('Workout updated.');
     } else {
-      data.strength.push({ id: uid(), date: dateVal, exercises, note });
+      data.strength.push({ id: uid(), date: dateVal, title, exercises, note });
       showToast('Workout saved.');
     }
     saveData();
@@ -740,25 +747,26 @@
       return;
     }
     const note = $('cardioNote').value.trim();
+    const title = $('cardioTitle').value.trim();
     if(state.editing && state.editing.type === 'cardio' && state.editing.source === 'planned'){
       if(state.editing.complete){
         data.planned = data.planned.filter(p => p.id !== state.editing.id);
-        data.cardio.push({ id: uid(), date: dateVal, activity, duration, distance, note });
+        data.cardio.push({ id: uid(), date: dateVal, title, activity, duration, distance, note });
         showToast('Cardio session logged.');
       } else if(state.editing.id){
         const rec = data.planned.find(p => p.id === state.editing.id);
-        if(rec){ rec.date = dateVal; rec.activity = activity; rec.duration = duration; rec.distance = distance; rec.note = note; }
+        if(rec){ rec.date = dateVal; rec.title = title; rec.activity = activity; rec.duration = duration; rec.distance = distance; rec.note = note; }
         showToast('Plan updated.');
       } else {
-        data.planned.push({ id: uid(), type:'cardio', date: dateVal, activity, duration, distance, note });
+        data.planned.push({ id: uid(), type:'cardio', date: dateVal, title, activity, duration, distance, note });
         showToast('Cardio session planned.');
       }
     } else if(state.editing && state.editing.type === 'cardio'){
       const rec = data.cardio.find(s => s.id === state.editing.id);
-      if(rec){ rec.date = dateVal; rec.activity = activity; rec.duration = duration; rec.distance = distance; rec.note = note; }
+      if(rec){ rec.date = dateVal; rec.title = title; rec.activity = activity; rec.duration = duration; rec.distance = distance; rec.note = note; }
       showToast('Cardio session updated.');
     } else {
-      data.cardio.push({ id: uid(), date: dateVal, activity, duration, distance, note });
+      data.cardio.push({ id: uid(), date: dateVal, title, activity, duration, distance, note });
       showToast('Cardio session saved.');
     }
     saveData();
@@ -783,6 +791,7 @@
     switchToLogTab();
 
     $('strengthDate').value = rec.date;
+    $('strengthTitle').value = rec.title || '';
     $('strengthNote').value = rec.note || '';
     clear(exerciseList);
     rec.exercises.forEach(ex => addExerciseBlock(ex));
@@ -800,6 +809,7 @@
     switchToLogTab();
 
     $('cardioDate').value = rec.date;
+    $('cardioTitle').value = rec.title || '';
     const known = ['Run','Bike','Swim','Row','Walk'];
     if(known.includes(rec.activity)){
       $('cardioActivity').value = rec.activity;
@@ -829,6 +839,7 @@
     switchToLogTab();
 
     $('strengthDate').value = existingRec ? existingRec.date : dateISO;
+    $('strengthTitle').value = existingRec ? (existingRec.title || '') : '';
     $('strengthNote').value = existingRec ? (existingRec.note || '') : '';
     clear(exerciseList);
     if(existingRec && existingRec.exercises && existingRec.exercises.length){
@@ -851,6 +862,7 @@
 
     const rec = existingRec;
     $('cardioDate').value = rec ? rec.date : dateISO;
+    $('cardioTitle').value = rec ? (rec.title || '') : '';
     if(rec){
       const known = ['Run','Bike','Swim','Row','Walk'];
       if(known.includes(rec.activity)){
@@ -950,7 +962,7 @@
         const isStrength = rec._type === 'strength';
         const key = rec._type + ':' + rec.id;
         const chip = el('span',{class:'type-chip ' + rec._type, 'aria-hidden':'true'}, isStrength ? '🏋️' : '🏃');
-        const title = el('p',{class:'history-title'}, isStrength ? 'Strength' : rec.activity);
+        const title = el('p',{class:'history-title'}, rec.title || (isStrength ? 'Strength' : rec.activity));
         const detail = el('p',{class:'history-detail'}, isStrength ? strengthSummaryLine(rec) : cardioSummaryLine(rec));
         const contentChildren = [title, detail];
         if(isStrength){
@@ -1082,7 +1094,7 @@
       const isStrength = rec._type === 'strength';
       const key = rec._type + ':' + rec.id;
       const chip = el('span',{class:'type-chip ' + rec._type, 'aria-hidden':'true'}, isStrength ? '🏋️' : '🏃');
-      const title = el('p',{class:'history-title'}, (isStrength ? 'Strength' : rec.activity) + ' — completed');
+      const title = el('p',{class:'history-title'}, (rec.title || (isStrength ? 'Strength' : rec.activity)) + ' — completed');
       const detail = el('p',{class:'history-detail'}, isStrength ? strengthSummaryLine(rec) : cardioSummaryLine(rec));
       const contentChildren = [title, detail];
       if(rec.note) contentChildren.push(el('p',{class:'history-note'}, rec.note));
@@ -1108,7 +1120,7 @@
       const key = 'planned:' + rec.id;
       const overdue = iso < todayISO();
       const chip = el('span',{class:'type-chip ' + rec.type, 'aria-hidden':'true'}, isStrength ? '🏋️' : '🏃');
-      const title = el('p',{class:'history-title'}, (isStrength ? 'Strength' : rec.activity) + (overdue ? ' — planned (overdue)' : ' — planned'));
+      const title = el('p',{class:'history-title'}, (rec.title || (isStrength ? 'Strength' : rec.activity)) + (overdue ? ' — planned (overdue)' : ' — planned'));
       const detail = el('p',{class:'history-detail'}, isStrength ? strengthSummaryLine(rec) : cardioSummaryLine(rec));
       const contentChildren = [title, detail];
       if(rec.note) contentChildren.push(el('p',{class:'history-note'}, rec.note));
