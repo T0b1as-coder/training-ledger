@@ -117,17 +117,6 @@
   .computed-hint{ margin:-0.4rem 0 0; font-size:0.82rem; color:var(--ink-secondary); }
   .computed-hint .mono{ color:var(--ink-primary); font-weight:600; }
 
-  .exercise-list{ display:flex; flex-direction:column; gap:0.8rem; }
-  .exercise-block{ border:1px solid var(--border); border-radius:10px; padding:0.75rem; background:var(--surface-page); }
-  .exercise-block-head{ display:flex; gap:0.5rem; align-items:center; margin-bottom:0.6rem; }
-  .exercise-name{ flex:1; }
-  .set-rows{ display:flex; flex-direction:column; gap:0.4rem; }
-  .set-row-head, .set-row{ display:grid; grid-template-columns:1.6rem 1fr 1fr 1.8rem; gap:0.4rem; align-items:center; }
-  .set-row-head span{ font-size:0.72rem; text-transform:uppercase; letter-spacing:0.04em; color:var(--ink-muted); }
-  .set-index{ font-family:'IBM Plex Mono',monospace; font-size:0.85rem; color:var(--ink-muted); text-align:center; }
-  .set-row input{ padding:0.4rem 0.5rem; }
-  .remove-set, .remove-exercise{ width:1.8rem; height:1.8rem; font-size:0.85rem; }
-
   .btn{ appearance:none; border-radius:9px; padding:0.65rem 1.1rem; font-weight:600; font-size:0.9rem; cursor:pointer; border:1px solid transparent; }
   .btn.primary{ background:var(--ink-primary); color:var(--surface-card); }
   .btn.primary:hover{ opacity:0.9; }
@@ -159,7 +148,7 @@
   .confirm-row span{ color:var(--ink-secondary); }
 
   .stat-tiles{ display:grid; grid-template-columns:repeat(2,1fr); gap:0.6rem; margin-bottom:1.3rem; }
-  @media (min-width:520px){ .stat-tiles{ grid-template-columns:repeat(4,1fr); } }
+  @media (min-width:520px){ .stat-tiles{ grid-template-columns:repeat(3,1fr); } }
   .stat-tile{ background:var(--surface-card); border:1px solid var(--border); border-radius:12px; padding:0.75rem 0.85rem; box-shadow:var(--shadow); }
   .stat-tile-label{ font-size:0.72rem; color:var(--ink-muted); text-transform:uppercase; letter-spacing:0.03em; }
   .stat-tile-value{ font-size:1.5rem; font-weight:600; margin-top:0.15rem; }
@@ -255,9 +244,7 @@
         <div class="field-row">
           <label>Title (optional)<input type="text" id="strengthTitle" placeholder="e.g. Maximum Strength" autocomplete="off"></label>
         </div>
-        <div id="exerciseList" class="exercise-list"></div>
-        <button type="button" id="addExerciseBtn" class="btn ghost">+ Add exercise</button>
-        <label class="field-note">Notes (optional)<textarea id="strengthNote" rows="2" placeholder="How did it feel?"></textarea></label>
+        <label class="field-note">Notes (optional)<textarea id="strengthNote" rows="4" placeholder="Exercises, sets, reps, weights, how it felt..."></textarea></label>
         <div class="form-actions">
           <button type="button" id="cancelStrengthEdit" class="btn subtle" hidden>Cancel edit</button>
           <button type="submit" class="btn primary" id="strengthSubmitBtn">Save workout</button>
@@ -320,21 +307,6 @@
 
     <section id="view-progress" class="view">
       <div class="stat-tiles" id="statTiles"></div>
-
-      <div class="progress-card">
-        <div class="progress-card-head">
-          <h2>Strength</h2>
-          <div class="progress-controls">
-            <select id="exercisePicker" aria-label="Choose exercise"></select>
-            <div class="pill-toggle small" id="strengthMetricToggle">
-              <button class="pill active" data-metric="max">Max weight</button>
-              <button class="pill" data-metric="volume">Total volume</button>
-            </div>
-          </div>
-        </div>
-        <p class="chart-title" id="strengthChartTitle"></p>
-        <div class="chart-container" id="strengthChart"></div>
-      </div>
 
       <div class="progress-card">
         <div class="progress-card-head">
@@ -487,12 +459,6 @@
   }
 
   // ---------- derived data ----------
-  function exerciseVolume(exercise){
-    return exercise.sets.reduce((sum,s) => sum + (Number(s.reps)||0) * (Number(s.weight)||0), 0);
-  }
-  function sessionVolume(session){
-    return session.exercises.reduce((sum,ex) => sum + exerciseVolume(ex), 0);
-  }
   function allLoggedDates(){
     const set = new Set();
     data.strength.forEach(s => set.add(s.date));
@@ -510,11 +476,6 @@
     }
     return count;
   }
-  function distinctExerciseNames(){
-    const set = new Set();
-    data.strength.forEach(s => s.exercises.forEach(ex => { if(ex.name) set.add(ex.name); }));
-    return Array.from(set).sort((a,b)=>a.localeCompare(b));
-  }
   function distinctActivities(){
     const set = new Set();
     data.cardio.forEach(s => { if(s.activity) set.add(s.activity); });
@@ -528,8 +489,6 @@
     historyFilter: 'all',
     editing: null, // { type:'strength'|'cardio', id }
     pendingDeleteKey: null,
-    selectedExercise: null,
-    strengthMetric: 'max',
     selectedActivity: null,
     cardioMetric: 'distance',
     calendarYear: new Date().getFullYear(),
@@ -581,71 +540,11 @@
   }
 
   // ============================================================
-  // STRENGTH FORM — exercise / set builder
+  // STRENGTH FORM — date / title / notes
   // ============================================================
-  const exerciseList = $('exerciseList');
-
-  function addSetRow(block, prefill){
-    const rows = block.querySelector('.set-rows');
-    const index = rows.querySelectorAll('.set-row').length + 1;
-    const repsInput = el('input',{type:'number',class:'set-reps',min:'0',step:'1',placeholder:'Reps',inputmode:'numeric'});
-    const weightInput = el('input',{type:'number',class:'set-weight',min:'0',step:'0.5',placeholder:'kg',inputmode:'decimal'});
-    if(prefill){
-      repsInput.value = prefill.reps;
-      weightInput.value = prefill.weight;
-    }
-    const row = el('div',{class:'set-row'},
-      el('span',{class:'set-index'}, String(index)),
-      repsInput,
-      weightInput,
-      el('button',{type:'button',class:'icon-btn remove-set','aria-label':'Remove set',onclick:()=>{ row.remove(); renumberSets(block); }}, '✕')
-    );
-    rows.appendChild(row);
-  }
-  function renumberSets(block){
-    block.querySelectorAll('.set-row').forEach((row,i) => {
-      row.querySelector('.set-index').textContent = String(i+1);
-    });
-  }
-  function addExerciseBlock(prefill){
-    const nameInput = el('input',{type:'text',class:'exercise-name',list:'exerciseNamesList',placeholder:'Exercise (e.g. Bench Press)'});
-    if(prefill) nameInput.value = prefill.name;
-    const rowsWrap = el('div',{class:'set-rows'},
-      el('div',{class:'set-row-head'}, el('span',{},'#'), el('span',{},'Reps'), el('span',{},'Weight (kg)'), el('span',{}))
-    );
-    const block = el('div',{class:'exercise-block'},
-      el('div',{class:'exercise-block-head'},
-        nameInput,
-        el('button',{type:'button',class:'icon-btn remove-exercise','aria-label':'Remove exercise',onclick:()=>block.remove()}, '✕')
-      ),
-      rowsWrap,
-      el('button',{type:'button',class:'btn ghost small add-set',onclick:()=>addSetRow(block)}, '+ Add set')
-    );
-    exerciseList.appendChild(block);
-    if(prefill && prefill.sets && prefill.sets.length){
-      prefill.sets.forEach(s => addSetRow(block, s));
-    } else {
-      addSetRow(block);
-    }
-    return block;
-  }
-  $('addExerciseBtn').addEventListener('click', () => addExerciseBlock());
-
-  function refreshExerciseDatalist(){
-    let dl = $('exerciseNamesList');
-    if(!dl){
-      dl = el('datalist',{id:'exerciseNamesList'});
-      document.body.appendChild(dl);
-    }
-    clear(dl);
-    distinctExerciseNames().forEach(name => dl.appendChild(el('option',{value:name})));
-  }
-
   function resetStrengthForm(){
     $('strengthForm').reset();
     $('strengthDate').value = todayISO();
-    clear(exerciseList);
-    addExerciseBlock();
     state.editing = null;
     $('cancelStrengthEdit').hidden = true;
     $('strengthSubmitBtn').textContent = 'Save workout';
@@ -654,48 +553,31 @@
   $('strengthForm').addEventListener('submit', (e) => {
     e.preventDefault();
     const dateVal = $('strengthDate').value || todayISO();
-    const exercises = [];
-    exerciseList.querySelectorAll('.exercise-block').forEach(block => {
-      const name = block.querySelector('.exercise-name').value.trim();
-      if(!name) return;
-      const sets = [];
-      block.querySelectorAll('.set-row').forEach(row => {
-        const reps = Number(row.querySelector('.set-reps').value);
-        const weight = Number(row.querySelector('.set-weight').value);
-        if(reps > 0 && weight >= 0) sets.push({ reps, weight });
-      });
-      if(sets.length) exercises.push({ name, sets });
-    });
-    if(!exercises.length){
-      showToast('Add at least one exercise with a completed set.');
-      return;
-    }
     const note = $('strengthNote').value.trim();
     const title = $('strengthTitle').value.trim();
     if(state.editing && state.editing.type === 'strength' && state.editing.source === 'planned'){
       if(state.editing.complete){
         data.planned = data.planned.filter(p => p.id !== state.editing.id);
-        data.strength.push({ id: uid(), date: dateVal, title, exercises, note });
+        data.strength.push({ id: uid(), date: dateVal, title, note });
         showToast('Workout logged.');
       } else if(state.editing.id){
         const rec = data.planned.find(p => p.id === state.editing.id);
-        if(rec){ rec.date = dateVal; rec.title = title; rec.exercises = exercises; rec.note = note; }
+        if(rec){ rec.date = dateVal; rec.title = title; rec.note = note; }
         showToast('Plan updated.');
       } else {
-        data.planned.push({ id: uid(), type:'strength', date: dateVal, title, exercises, note });
+        data.planned.push({ id: uid(), type:'strength', date: dateVal, title, note });
         showToast('Workout planned.');
       }
     } else if(state.editing && state.editing.type === 'strength'){
       const rec = data.strength.find(s => s.id === state.editing.id);
-      if(rec){ rec.date = dateVal; rec.title = title; rec.exercises = exercises; rec.note = note; }
+      if(rec){ rec.date = dateVal; rec.title = title; rec.note = note; }
       showToast('Workout updated.');
     } else {
-      data.strength.push({ id: uid(), date: dateVal, title, exercises, note });
+      data.strength.push({ id: uid(), date: dateVal, title, note });
       showToast('Workout saved.');
     }
     saveData();
     resetStrengthForm();
-    refreshExerciseDatalist();
     renderAll();
   });
   $('cancelStrengthEdit').addEventListener('click', resetStrengthForm);
@@ -793,8 +675,6 @@
     $('strengthDate').value = rec.date;
     $('strengthTitle').value = rec.title || '';
     $('strengthNote').value = rec.note || '';
-    clear(exerciseList);
-    rec.exercises.forEach(ex => addExerciseBlock(ex));
     state.editing = { type:'strength', id: rec.id, source:'log' };
     $('cancelStrengthEdit').hidden = false;
     $('cancelStrengthEdit').textContent = 'Cancel edit';
@@ -841,12 +721,6 @@
     $('strengthDate').value = existingRec ? existingRec.date : dateISO;
     $('strengthTitle').value = existingRec ? (existingRec.title || '') : '';
     $('strengthNote').value = existingRec ? (existingRec.note || '') : '';
-    clear(exerciseList);
-    if(existingRec && existingRec.exercises && existingRec.exercises.length){
-      existingRec.exercises.forEach(ex => addExerciseBlock(ex));
-    } else {
-      addExerciseBlock();
-    }
     state.editing = { type:'strength', id: existingRec ? existingRec.id : null, source:'planned', complete: !!completeMode };
     $('cancelStrengthEdit').hidden = false;
     $('cancelStrengthEdit').textContent = 'Cancel';
@@ -919,12 +793,6 @@
     });
   });
 
-  function strengthSummaryLine(rec){
-    return rec.exercises.map(ex => {
-      const setsStr = ex.sets.map(s => `${formatNum(s.reps,0)}×${formatNum(s.weight)}kg`).join(', ');
-      return `${ex.name} — ${setsStr}`;
-    }).join('; ');
-  }
   function cardioSummaryLine(rec){
     let str = `${rec.activity} · ${formatNum(rec.duration,0)} min`;
     if(rec.distance){
@@ -963,12 +831,8 @@
         const key = rec._type + ':' + rec.id;
         const chip = el('span',{class:'type-chip ' + rec._type, 'aria-hidden':'true'}, isStrength ? '🏋️' : '🏃');
         const title = el('p',{class:'history-title'}, rec.title || (isStrength ? 'Strength' : rec.activity));
-        const detail = el('p',{class:'history-detail'}, isStrength ? strengthSummaryLine(rec) : cardioSummaryLine(rec));
-        const contentChildren = [title, detail];
-        if(isStrength){
-          const vol = sessionVolume(rec);
-          contentChildren.push(el('p',{class:'history-detail'}, 'Total volume: ', el('span',{class:'mono'}, formatNum(vol,0) + ' kg')));
-        }
+        const contentChildren = [title];
+        if(!isStrength) contentChildren.push(el('p',{class:'history-detail'}, cardioSummaryLine(rec)));
         if(rec.note) contentChildren.push(el('p',{class:'history-note'}, rec.note));
         const content = el('div',{class:'history-content'}, contentChildren);
 
@@ -1095,8 +959,8 @@
       const key = rec._type + ':' + rec.id;
       const chip = el('span',{class:'type-chip ' + rec._type, 'aria-hidden':'true'}, isStrength ? '🏋️' : '🏃');
       const title = el('p',{class:'history-title'}, (rec.title || (isStrength ? 'Strength' : rec.activity)) + ' — completed');
-      const detail = el('p',{class:'history-detail'}, isStrength ? strengthSummaryLine(rec) : cardioSummaryLine(rec));
-      const contentChildren = [title, detail];
+      const contentChildren = [title];
+      if(!isStrength) contentChildren.push(el('p',{class:'history-detail'}, cardioSummaryLine(rec)));
       if(rec.note) contentChildren.push(el('p',{class:'history-note'}, rec.note));
       const content = el('div',{class:'history-content'}, contentChildren);
       let actions;
@@ -1121,8 +985,8 @@
       const overdue = iso < todayISO();
       const chip = el('span',{class:'type-chip ' + rec.type, 'aria-hidden':'true'}, isStrength ? '🏋️' : '🏃');
       const title = el('p',{class:'history-title'}, (rec.title || (isStrength ? 'Strength' : rec.activity)) + (overdue ? ' — planned (overdue)' : ' — planned'));
-      const detail = el('p',{class:'history-detail'}, isStrength ? strengthSummaryLine(rec) : cardioSummaryLine(rec));
-      const contentChildren = [title, detail];
+      const contentChildren = [title];
+      if(!isStrength) contentChildren.push(el('p',{class:'history-detail'}, cardioSummaryLine(rec)));
       if(rec.note) contentChildren.push(el('p',{class:'history-note'}, rec.note));
       const content = el('div',{class:'history-content'}, contentChildren);
       let actions;
@@ -1165,13 +1029,11 @@
     const strengthThisWeek = data.strength.filter(r => r.date >= weekStartISO);
     const cardioThisWeek = data.cardio.filter(r => r.date >= weekStartISO);
     const sessionsThisWeek = strengthThisWeek.length + cardioThisWeek.length;
-    const volumeThisWeek = strengthThisWeek.reduce((sum,r) => sum + sessionVolume(r), 0);
     const distanceThisWeek = cardioThisWeek.reduce((sum,r) => sum + (r.distance||0), 0);
 
     const tiles = [
       ['Day streak', formatNum(computeStreak(),0)],
       ['Sessions this week', formatNum(sessionsThisWeek,0)],
-      ['Volume this week', formatNum(volumeThisWeek,0) + ' kg'],
       ['Cardio distance this week', formatNum(distanceThisWeek,2) + ' km']
     ];
     tiles.forEach(([label,value]) => {
@@ -1341,13 +1203,6 @@
     options.forEach(opt => select.appendChild(el('option',{value:opt, selected: opt===selected ? 'selected' : false}, opt)));
   }
 
-  $('strengthMetricToggle').addEventListener('click', (e) => {
-    const btn = e.target.closest('.pill');
-    if(!btn) return;
-    state.strengthMetric = btn.dataset.metric;
-    document.querySelectorAll('#strengthMetricToggle .pill').forEach(b => b.classList.toggle('active', b===btn));
-    renderStrengthChart();
-  });
   $('cardioMetricToggle').addEventListener('click', (e) => {
     const btn = e.target.closest('.pill');
     if(!btn) return;
@@ -1355,52 +1210,10 @@
     document.querySelectorAll('#cardioMetricToggle .pill').forEach(b => b.classList.toggle('active', b===btn));
     renderCardioChart();
   });
-  $('exercisePicker').addEventListener('change', (e) => {
-    state.selectedExercise = e.target.value;
-    renderStrengthChart();
-  });
   $('activityPicker').addEventListener('change', (e) => {
     state.selectedActivity = e.target.value;
     renderCardioChart();
   });
-
-  function renderStrengthChart(){
-    const names = distinctExerciseNames();
-    const picker = $('exercisePicker');
-    if(!names.length){
-      picker.hidden = true;
-      $('strengthChartTitle').textContent = '';
-      renderLineChart($('strengthChart'), [], {});
-      $('strengthChart').innerHTML = '';
-      $('strengthChart').appendChild(el('div',{class:'chart-empty'},'Log a strength workout to start tracking progress.'));
-      return;
-    }
-    picker.hidden = false;
-    if(!state.selectedExercise || !names.includes(state.selectedExercise)) state.selectedExercise = names[0];
-    populateSelect(picker, names, state.selectedExercise);
-
-    const sessions = data.strength
-      .filter(s => s.exercises.some(ex => ex.name === state.selectedExercise))
-      .slice()
-      .sort((a,b) => a.date.localeCompare(b.date));
-
-    const points = sessions.map(s => {
-      const ex = s.exercises.find(e => e.name === state.selectedExercise);
-      const value = state.strengthMetric === 'max'
-        ? Math.max(...ex.sets.map(set => Number(set.weight)||0))
-        : exerciseVolume(ex);
-      return { x: s.date, y: value };
-    });
-
-    const metricLabel = state.strengthMetric === 'max' ? 'Max weight per session (kg)' : 'Total volume per session (kg)';
-    $('strengthChartTitle').textContent = `${state.selectedExercise} — ${metricLabel}`;
-    renderLineChart($('strengthChart'), points, {
-      color: 'var(--accent-strength)',
-      unit: ' kg',
-      decimals: state.strengthMetric === 'max' ? 1 : 0,
-      ariaLabel: `${state.selectedExercise} ${metricLabel}`
-    });
-  }
 
   function renderCardioChart(){
     const activities = distinctActivities();
@@ -1442,7 +1255,6 @@
 
   function renderProgress(){
     renderStatTiles();
-    renderStrengthChart();
     renderCardioChart();
   }
 
@@ -1489,7 +1301,6 @@
       }
       data = { strength: parsed.strength, cardio: parsed.cardio, planned: Array.isArray(parsed.planned) ? parsed.planned : [] };
       saveData();
-      refreshExerciseDatalist();
       renderAll();
       $('importStatus').textContent = 'Backup restored.';
       showToast('Backup restored.');
@@ -1510,10 +1321,8 @@
   }
 
   loadData();
-  refreshExerciseDatalist();
   $('strengthDate').value = todayISO();
   $('cardioDate').value = todayISO();
-  addExerciseBlock();
   if(!storageAvailable){
     showToast('This browser is blocking local storage — your entries won\'t be saved after you leave.');
   }
