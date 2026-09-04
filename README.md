@@ -36,8 +36,15 @@ it or keep a safety copy.
 
 ## Running it
 
-Just open `index.html` in a browser — double-click it, or run a tiny local
-server if you prefer:
+Live version: **https://t0b1as-coder.github.io/training-ledger/**
+
+Every push to `main` redeploys it via the workflow in
+`.github/workflows/deploy.yml`. (`localStorage` is per-origin, so the hosted
+site and a local copy keep separate data — move data between them with the
+backup button.)
+
+To run it locally, just open `index.html` in a browser — double-click it, or
+run a tiny local server if you prefer:
 
 ```
 python3 -m http.server 8000
