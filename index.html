@@ -1,3 +1,5 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Training Ledger</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Work+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
@@ -59,7 +61,7 @@
   }
 
   *,*::before,*::after{ box-sizing:border-box; }
-  html{ -webkit-text-size-adjust:100%; }
+  html{ -webkit-text-size-adjust:100%; -webkit-tap-highlight-color:transparent; }
   body{
     margin:0;
     background:var(--surface-page);
@@ -67,6 +69,7 @@
     font-family:'Work Sans', system-ui, -apple-system, "Segoe UI", sans-serif;
     line-height:1.45;
     -webkit-font-smoothing:antialiased;
+    overflow-wrap:break-word;
   }
   @media (prefers-reduced-motion: reduce){
     *{ animation-duration:0.001ms !important; transition-duration:0.001ms !important; }
@@ -176,6 +179,18 @@
   #exportText, #importText{ font-family:'IBM Plex Mono',monospace; font-size:0.76rem; resize:vertical; }
 
   .toast{ position:fixed; left:50%; bottom:1.2rem; transform:translateX(-50%); background:var(--ink-primary); color:var(--surface-card); padding:0.6rem 1.1rem; border-radius:999px; font-size:0.85rem; box-shadow:var(--shadow); z-index:30; }
+
+  @media (max-width:480px){
+    .app{ padding:0.9rem 0.8rem 2.5rem; }
+    .field-row{ flex-direction:column; gap:0.9rem; }
+    .field-row > label{ flex:0 0 auto; }
+    .icon-btn{ width:2.5rem; height:2.5rem; }
+    .tab-btn{ padding:0.7rem 0.2rem; margin-right:0.9rem; }
+    .calendar-cells{ gap:0.2rem; }
+    .calendar-cell{ min-height:3rem; padding:0.35rem 0.15rem; }
+    .calendar-legend{ gap:0.45rem 0.85rem; }
+    .form-actions .btn.primary{ flex:1; }
+  }
 
   [hidden]{ display:none !important; }
 </style>
