@@ -1,0 +1,14 @@
+{
+  "name": "Training Ledger",
+  "short_name": "Training Ledger",
+  "description": "Personal strength & cardio training log",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#EEF0EF",
+  "theme_color": "#EEF0EF",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

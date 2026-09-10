@@ -4,10 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A personal strength & cardio training log. The entire app is one self-contained
-file, `index.html` — no build step, no dependencies, no package manager, no
+A personal strength & cardio training log. All app code — HTML, CSS, JS — is in
+one file, `index.html`: no build step, no dependencies, no package manager, no
 framework. It is developed by describing changes to Claude Code rather than
 hand-editing (that's the point of the project).
+
+Alongside `index.html` the repo also ships a small PWA layer so the app is
+installable and works offline: `manifest.webmanifest`, `sw.js` (service
+worker), and `icon-192.png` / `icon-512.png` / `apple-touch-icon.png` (a white
+"T" on `#C4571F`, regenerable with Pillow). The service worker caches the app
+shell (`index.html`) plus the manifest, icons, and Google Font files. It is
+**stale-while-revalidate for navigations**, so the first load after a deploy
+serves the previous `index.html` and picks up the new one on the next launch.
+Bump `CACHE` in `sw.js` to force old caches to be dropped.
+
+Deployed to GitHub Pages (`.github/workflows/deploy.yml`) on every push to
+`main`: https://t0b1as-coder.github.io/training-ledger/
 
 ## Running / verifying changes
 
@@ -17,6 +29,10 @@ There is no build, lint, or test tooling. To check a change:
 - Exercise the tab you changed, and watch the browser console — the whole script
   is one IIFE that runs on load, so a reference to a missing element id throws
   immediately and visibly.
+- The service worker only registers over `http(s)`/`localhost`, never `file://`,
+  so to test PWA/offline behaviour use `python3 -m http.server`. Once a service
+  worker is active it will serve a cached `index.html`; hard-reload (or bump
+  `CACHE` in `sw.js`) to see edits, and use an incognito window to start clean.
 - The in-editor preview pane renders this file as a **static snapshot** (it lives
   outside a served project), and each browser/tab has its **own `localStorage`**,
   so test data does not carry between the preview and a real browser.
@@ -33,7 +49,8 @@ There is no build, lint, or test tooling. To check a change:
 2. **HTML body** — topbar (day-streak chip + backup button), `.tab-rail` nav, and
    the three views: `#view-log`, `#view-calendar`, `#view-history`. Plus the
    backup/restore modal and a toast element.
-3. **`<script>`** — a single `"use strict"` IIFE holding all logic.
+3. **`<script>`** — a single `"use strict"` IIFE holding all app logic, followed
+   by a tiny second `<script>` that only registers the service worker.
 
 ### Data
 
@@ -75,8 +92,11 @@ unless asked.
 
 ## Conventions
 
-- Keep it dependency-free and single-file. Google Fonts is the only external
-  resource.
+- Keep it dependency-free. All app code stays in `index.html`; the only other
+  files are the PWA layer (manifest, `sw.js`, icons) and CI. Google Fonts is the
+  only external resource.
+- Any resource `index.html` or `sw.js` references must be relative (the site is
+  served from the `/training-ledger/` subpath, not a domain root).
 - Element ids `camelCase`; CSS classes `kebab-case`.
 - Any color goes through a CSS variable so both themes work.
 - Match the existing vanilla style — `el()` for DOM, plain functions, no

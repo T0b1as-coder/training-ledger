@@ -21,13 +21,19 @@ per-activity trends, weekly totals) now live in the notes you write.
 
 ## How it's built
 
-It's a single self-contained page (`index.html`) — no build step, no dependencies.
+All the app code — HTML, CSS, JavaScript — is in one page, `index.html`: no
+build step, no dependencies.
 
 - **HTML** — the page structure (forms, tabs, history list, calendar).
 - **CSS** (inside `<style>`) — the look, including a light/dark theme that
   follows your system setting.
 - **JavaScript** (inside `<script>`) — the app logic: reading and writing your
   data and rendering each tab.
+
+A small PWA layer sits alongside it — `manifest.webmanifest`, `sw.js` (a
+service worker), and icon files — so the app can be installed to a phone's home
+screen and works with no connection. On a phone, open the live link and choose
+"Add to Home Screen".
 
 All data is saved to the browser's `localStorage` — nothing is sent to a
 server. That means your data lives only in the browser you use it in; use the
