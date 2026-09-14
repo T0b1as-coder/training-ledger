@@ -21,9 +21,13 @@ Bump `CACHE` in `sw.js` to force old caches to be dropped.
 Deployed to GitHub Pages (`.github/workflows/deploy.yml`) on every push to
 `main`: https://t0b1as-coder.github.io/training-ledger/
 
+There is a Playwright end-to-end test suite (`tests/`) that drives the real
+`index.html` in a browser — see **Tests** below. It's dev-only tooling: the
+shipped app still has zero runtime dependencies, only the test suite uses npm.
+
 ## Running / verifying changes
 
-There is no build, lint, or test tooling. To check a change:
+There is no build or lint tooling. To check a change by hand:
 
 - Open `index.html` directly in a browser (double-click, or `python3 -m http.server 8000` then visit `http://localhost:8000`).
 - Exercise the tab you changed, and watch the browser console — the whole script
@@ -37,7 +41,29 @@ There is no build, lint, or test tooling. To check a change:
   outside a served project), and each browser/tab has its **own `localStorage`**,
   so test data does not carry between the preview and a real browser.
 
-`gh` CLI is not installed in this environment.
+`gh` CLI is not installed in this environment. Neither is Node/npm as of this
+writing — if you need to run the test suite yourself and `node`/`npm` aren't on
+PATH, say so rather than assuming a passing run; CI (`.github/workflows/test.yml`)
+is what actually verifies it on every PR.
+
+## Tests
+
+`npm install && npx playwright install --with-deps chromium && npm test` runs
+the suite once (`playwright.config.js` starts `tests/static-server.js` — a
+~30-line dependency-free Node script — and points Chromium at it; no server
+needs to be started by hand). `npm run test:ui` opens Playwright's UI mode for
+picking through failures interactively.
+
+Each spec drives the page like a user would (fill the real form, click the
+real button, assert on the real rendered DOM) rather than calling internal
+functions — nothing in the IIFE is exported, and that's deliberate. Add a new
+`tests/*.spec.js` file per feature area; each test gets a fresh browser context
+(so fresh `localStorage`) automatically.
+
+**No `package-lock.json` yet** — it needs `npm install` to generate, which
+this environment couldn't run. CI uses `npm install` (not `npm ci`) until one
+exists; commit the lockfile the first time you run `npm install` somewhere
+with Node.
 
 ## Architecture
 
@@ -92,9 +118,10 @@ unless asked.
 
 ## Conventions
 
-- Keep it dependency-free. All app code stays in `index.html`; the only other
-  files are the PWA layer (manifest, `sw.js`, icons) and CI. Google Fonts is the
-  only external resource.
+- Keep the app dependency-free. All app code stays in `index.html`; the only
+  other shipped files are the PWA layer (manifest, `sw.js`, icons). `tests/`,
+  `package.json`, and CI are dev-only and never ship. Google Fonts is the only
+  external resource the app itself loads.
 - Any resource `index.html` or `sw.js` references must be relative (the site is
   served from the `/training-ledger/` subpath, not a domain root).
 - Element ids `camelCase`; CSS classes `kebab-case`.
