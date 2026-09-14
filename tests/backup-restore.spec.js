@@ -34,8 +34,9 @@ test.describe('Backup and restore', () => {
 
     await page.locator('#closeBackup').click();
     await page.locator('[data-tab="history"]').click();
-    await expect(page.locator('.history-item')).toHaveCount(1);
-    await expect(page.locator('.history-title')).toHaveText('Imported run');
+    const history = page.locator('#historyList');
+    await expect(history.locator('.history-item')).toHaveCount(1);
+    await expect(history.locator('.history-title')).toHaveText('Imported run');
   });
 
   test('a malformed backup is rejected, leaving existing data untouched', async ({ page }) => {
@@ -52,6 +53,6 @@ test.describe('Backup and restore', () => {
 
     await page.locator('#closeBackup').click();
     await page.locator('[data-tab="history"]').click();
-    await expect(page.locator('.history-title')).toHaveText('Keep me');
+    await expect(page.locator('#historyList .history-title')).toHaveText('Keep me');
   });
 });

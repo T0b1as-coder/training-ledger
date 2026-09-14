@@ -24,7 +24,7 @@ test.describe('Calendar planning', () => {
     await expect(dayPanel.locator('.history-title')).toHaveText('Planned strength — completed');
 
     await page.locator('[data-tab="history"]').click();
-    await expect(page.locator('.history-title')).toHaveText('Planned strength');
+    await expect(page.locator('#historyList .history-title')).toHaveText('Planned strength');
   });
 
   test('a planned session can be removed', async ({ page }) => {
