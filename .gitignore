@@ -9,3 +9,9 @@ Thumbs.db
 # Just in case a future version adds tooling
 node_modules/
 .env
+
+# Playwright test output
+/test-results/
+/playwright-report/
+/playwright/.cache/
+/blob-report/

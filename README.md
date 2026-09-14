@@ -58,6 +58,23 @@ python3 -m http.server 8000
 
 then visit `http://localhost:8000`.
 
+## Testing
+
+The app itself has no test tooling built in — but there's a Playwright
+end-to-end suite (`tests/`) that drives the real page in a browser: logging
+sessions, editing, deleting, planning from the Calendar, backup/restore, and
+the day streak. It's dev-only (needs [Node.js](https://nodejs.org)); the
+shipped app is unaffected either way.
+
+```
+npm install
+npx playwright install --with-deps chromium
+npm test
+```
+
+Runs automatically on every pull request via
+`.github/workflows/test.yml`.
+
 ## Status
 
 Personal project, actively used and evolving. Changes get made by describing
