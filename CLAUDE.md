@@ -21,6 +21,11 @@ Bump `CACHE` in `sw.js` to force old caches to be dropped.
 Deployed to GitHub Pages (`.github/workflows/deploy.yml`) on every push to
 `main`: https://t0b1as-coder.github.io/training-ledger/
 
+Optionally syncs across devices through a private GitHub Gist (Backup &
+Restore → **Sync** tab) — see **Sync** below. This is the app's first genuine
+external-service dependency beyond Google Fonts (`api.github.com`, reached
+directly from the browser with a user-supplied personal access token).
+
 There is a Playwright end-to-end test suite (`tests/`) that drives the real
 `index.html` in a browser — see **Tests** below. It's dev-only tooling: the
 shipped app still has zero runtime dependencies, only the test suite uses npm.
@@ -65,6 +70,32 @@ this environment couldn't run. CI uses `npm install` (not `npm ci`) until one
 exists; commit the lockfile the first time you run `npm install` somewhere
 with Node.
 
+## Sync
+
+Reuses the existing backup JSON: the Sync tab pushes/pulls that same shape
+to/from one private Gist (filename `trainingLedger.json`) via `api.github.com`,
+using a GitHub personal access token (scope: `gist` only) the user pastes in.
+
+- The token + gist id live in **`trainingLedger.sync.v1`**, a separate
+  `localStorage` key from the training data. Never merge this into `data` or
+  include it in a backup export — it's a credential.
+- Conflict handling is **last-write-wins on the whole blob**, via a top-level
+  `data.lastModified` (epoch ms, set in `saveData()`). No per-record merge.
+  Two devices editing while both offline at the same moment can silently lose
+  one side's changes — this is a documented, accepted limitation, not a bug
+  to "fix" by adding merge logic unless asked.
+- `saveData()` always bumps `lastModified` and schedules a debounced push
+  (`scheduleSyncPush`, ~1.5s). Adopting a remote copy that's newer calls
+  `persistLocalOnly()` instead (keeps the remote's own `lastModified`, doesn't
+  re-push what the gist already has).
+- On load, the app renders immediately with whatever's on-device, then
+  quietly pulls and swaps in a newer remote copy if one shows up
+  (`syncPullAndAdopt`) — startup never blocks on the network.
+- Tests (`tests/gist-sync.spec.js`) mock `api.github.com` with
+  `page.route()` and set `serviceWorkers: 'block'` for that file. **Never**
+  add a real GitHub token as a CI secret for this — mocking is the correct
+  and sufficient way to test this integration in a public repo.
+
 ## Architecture
 
 `index.html` is three parts in one file:
@@ -84,12 +115,14 @@ Everything lives in one object persisted to `localStorage` under
 `trainingLedger.v1`:
 
 ```js
-data = { strength: [], cardio: [], planned: [] }
+data = { strength: [], cardio: [], planned: [], lastModified }
 ```
 
 - **strength** record: `{ id, date, title, note }`
 - **cardio** record: `{ id, date, title, activity, note }`
 - **planned** record: same fields plus `type: 'strength' | 'cardio'`
+- **lastModified**: epoch ms, set by `saveData()` on every save. Used only for
+  Sync's last-write-wins comparison — nothing else reads it.
 
 `date` is a local `YYYY-MM-DD` string. Use `toISODate()` / `parseISO()` for date
 work — never `new Date(isoString)` (UTC-parsing bug). Record ids come from `uid()`.
@@ -118,10 +151,11 @@ unless asked.
 
 ## Conventions
 
-- Keep the app dependency-free. All app code stays in `index.html`; the only
-  other shipped files are the PWA layer (manifest, `sw.js`, icons). `tests/`,
-  `package.json`, and CI are dev-only and never ship. Google Fonts is the only
-  external resource the app itself loads.
+- Keep the app dependency-free (no npm packages, build step, or framework in
+  what ships). All app code stays in `index.html`; the only other shipped
+  files are the PWA layer (manifest, `sw.js`, icons). `tests/`, `package.json`,
+  and CI are dev-only and never ship. The app's own external calls: Google
+  Fonts, plus `api.github.com` when Sync is connected.
 - Any resource `index.html` or `sw.js` references must be relative (the site is
   served from the `/training-ledger/` subpath, not a domain root).
 - Element ids `camelCase`; CSS classes `kebab-case`.

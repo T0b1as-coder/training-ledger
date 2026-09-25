@@ -35,10 +35,10 @@ service worker), and icon files — so the app can be installed to a phone's hom
 screen and works with no connection. On a phone, open the live link and choose
 "Add to Home Screen".
 
-All data is saved to the browser's `localStorage` — nothing is sent to a
-server. That means your data lives only in the browser you use it in; use the
-backup button (⇅) in the app to copy your data out as text if you want to move
-it or keep a safety copy.
+All data is saved to the browser's `localStorage` — by default nothing is sent
+to a server, so it lives only in the browser you use it in. Use the backup
+button (⇅) in the app to copy your data out as text if you want to move it or
+keep a safety copy — or turn on **Sync** (below) to do that automatically.
 
 ## Running it
 
@@ -58,13 +58,40 @@ python3 -m http.server 8000
 
 then visit `http://localhost:8000`.
 
+## Syncing across devices
+
+By default, your phone and your laptop each have their own separate copy of
+your data. The **Sync** tab (inside the backup ⇅ button) keeps them in step
+automatically, through a private [GitHub Gist](https://gist.github.com) — a
+small private file GitHub hosts for you.
+
+To turn it on:
+
+1. Create a GitHub [personal access token](https://github.com/settings/tokens?type=beta)
+   scoped to **gist only** — don't grant it anything else.
+2. Open the app → ⇅ → **Sync** → paste the token → **Connect**.
+3. Repeat step 2 on each other device, using the same token.
+
+That token is a secret — treat it like a password. It's stored only in that
+device's browser storage, never in this repository, and never leaves your
+devices except to talk to `api.github.com`. Anyone who got hold of it could
+read or change your synced training data, but nothing else on your GitHub
+account (assuming it's scoped to `gist` only, as above).
+
+**Known limitation:** conflicts are resolved by whichever device saved most
+recently — there's no merging. If you log something on two devices at the
+exact same time while both are offline, one set of changes wins and the other
+is lost. For a personal training log this is rare and low-stakes, but worth
+knowing.
+
 ## Testing
 
 The app itself has no test tooling built in — but there's a Playwright
 end-to-end suite (`tests/`) that drives the real page in a browser: logging
-sessions, editing, deleting, planning from the Calendar, backup/restore, and
-the day streak. It's dev-only (needs [Node.js](https://nodejs.org)); the
-shipped app is unaffected either way.
+sessions, editing, deleting, planning from the Calendar, backup/restore, sync,
+and the day streak. It's dev-only (needs [Node.js](https://nodejs.org)); the
+shipped app is unaffected either way. The sync tests fake GitHub's API rather
+than calling it for real — there's no real token or gist involved in CI.
 
 ```
 npm install
