@@ -312,6 +312,7 @@
     <div class="modal-tabs pill-toggle">
       <button class="pill active" data-backuptab="export">Export</button>
       <button class="pill" data-backuptab="import">Import</button>
+      <button class="pill" data-backuptab="sync">Sync</button>
     </div>
     <div id="exportPane">
       <p class="hint">Copy this text somewhere safe (a notes app, an email to yourself). Paste it back under Import to restore it later, or in a different browser.</p>
@@ -330,6 +331,24 @@
         <button class="btn primary" id="loadImportBtn">Restore this backup</button>
       </div>
       <p id="importStatus" class="hint" aria-live="polite"></p>
+    </div>
+    <div id="syncPane" hidden>
+      <p class="hint">Keep this device and others in sync automatically through a private GitHub Gist — a small file GitHub hosts for you.</p>
+      <p id="syncStatus" class="hint" aria-live="polite">Not connected</p>
+      <div id="syncConnectForm">
+        <p class="hint">Needs a GitHub personal access token scoped to <span class="mono">gist</span> only. Treat it like a password — anyone with it could read or change this synced data (nothing else on your account).</p>
+        <label>GitHub token<input type="password" id="syncTokenInput" placeholder="ghp_..." autocomplete="off"></label>
+        <div class="form-actions" style="margin-top:0.6rem;">
+          <span></span>
+          <button class="btn primary" id="connectSyncBtn">Connect</button>
+        </div>
+      </div>
+      <div id="syncConnectedActions" hidden>
+        <div class="form-actions" style="margin-top:0.6rem;">
+          <button class="btn subtle" id="disconnectSyncBtn">Disconnect this device</button>
+          <button class="btn primary" id="syncNowBtn">Sync now</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -408,11 +427,23 @@
     }
   }
   function saveData(){
+    data.lastModified = Date.now();
     try{
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     }catch(e){
       storageAvailable = false;
       showToast('Could not save — this browser is blocking storage.');
+    }
+    scheduleSyncPush();
+  }
+  // Writes the current `data` to this device only, without bumping
+  // lastModified or re-pushing -- used when we've just adopted a remote copy
+  // that is already exactly what the gist has.
+  function persistLocalOnly(){
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }catch(e){
+      storageAvailable = false;
     }
   }
 
@@ -934,6 +965,8 @@
     $('exportText').value = JSON.stringify(data, null, 2);
     $('copyStatus').textContent = '';
     $('importStatus').textContent = '';
+    refreshSyncPane();
+    showSyncStatusForCurrentState();
     backupModal.hidden = false;
   });
   $('closeBackup').addEventListener('click', () => { backupModal.hidden = true; });
@@ -942,9 +975,11 @@
   document.querySelectorAll('.modal-tabs .pill').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.modal-tabs .pill').forEach(b => b.classList.toggle('active', b===btn));
-      const isExport = btn.dataset.backuptab === 'export';
-      $('exportPane').hidden = !isExport;
-      $('importPane').hidden = isExport;
+      const tab = btn.dataset.backuptab;
+      $('exportPane').hidden = tab !== 'export';
+      $('importPane').hidden = tab !== 'import';
+      $('syncPane').hidden = tab !== 'sync';
+      if(tab === 'sync'){ refreshSyncPane(); showSyncStatusForCurrentState(); }
     });
   });
 
@@ -979,6 +1014,179 @@
   });
 
   // ============================================================
+  // SYNC (private GitHub Gist)
+  // ============================================================
+  // Keeps devices in sync by pushing/pulling the same JSON a backup export
+  // produces to/from one private Gist. Whichever device saved most recently
+  // wins wholesale (data.lastModified) -- there is no per-record merge, so
+  // edits made on two devices at the same time while both offline can
+  // overwrite each other. The token lives only in this device's
+  // localStorage, under a separate key from the training data, and is never
+  // included in a backup export.
+  const SYNC_KEY = 'trainingLedger.sync.v1';
+  const GIST_FILENAME = 'trainingLedger.json';
+  let syncConfig = { token: '', gistId: '' };
+
+  function loadSyncConfig(){
+    try{
+      const raw = localStorage.getItem(SYNC_KEY);
+      if(raw){
+        const parsed = JSON.parse(raw);
+        if(parsed && typeof parsed.token === 'string' && typeof parsed.gistId === 'string') syncConfig = parsed;
+      }
+    }catch(e){ /* leave sync disabled */ }
+  }
+  function saveSyncConfig(){
+    try{ localStorage.setItem(SYNC_KEY, JSON.stringify(syncConfig)); }catch(e){ /* this device just won't remember it */ }
+  }
+  function clearSyncConfig(){
+    syncConfig = { token: '', gistId: '' };
+    try{ localStorage.removeItem(SYNC_KEY); }catch(e){}
+  }
+  function syncEnabled(){ return !!(syncConfig.token && syncConfig.gistId); }
+
+  function setSyncStatus(text){
+    const el = $('syncStatus');
+    if(el) el.textContent = text;
+  }
+  // Toggles which half of the pane is showing and clears the token field.
+  // Deliberately does not touch the status line -- callers that are opening
+  // the pane fresh should call showSyncStatusForCurrentState() too; callers
+  // right after an action (connect/disconnect) want to keep whatever status
+  // that action just set, not have it overwritten back to "Not connected".
+  function refreshSyncPane(){
+    const connected = syncEnabled();
+    $('syncConnectForm').hidden = connected;
+    $('syncConnectedActions').hidden = !connected;
+    $('syncTokenInput').value = '';
+  }
+  function showSyncStatusForCurrentState(){
+    setSyncStatus(syncEnabled() ? 'Connected' : 'Not connected');
+  }
+
+  function gistHeaders(token){
+    return { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json' };
+  }
+  async function findExistingGist(token){
+    const res = await fetch('https://api.github.com/gists?per_page=100', { headers: gistHeaders(token) });
+    if(!res.ok) throw new Error('list-failed');
+    const gists = await res.json();
+    const match = gists.find(g => g.files && g.files[GIST_FILENAME]);
+    return match ? match.id : null;
+  }
+  async function createGist(token, initialData){
+    const res = await fetch('https://api.github.com/gists', {
+      method: 'POST',
+      headers: gistHeaders(token),
+      body: JSON.stringify({
+        description: 'Training Ledger data — do not edit by hand',
+        public: false,
+        files: { [GIST_FILENAME]: { content: JSON.stringify(initialData) } }
+      })
+    });
+    if(!res.ok) throw new Error('create-failed');
+    const created = await res.json();
+    return created.id;
+  }
+  async function pushToGist(token, gistId, payload){
+    const res = await fetch('https://api.github.com/gists/' + gistId, {
+      method: 'PATCH',
+      headers: gistHeaders(token),
+      body: JSON.stringify({ files: { [GIST_FILENAME]: { content: JSON.stringify(payload) } } })
+    });
+    if(!res.ok) throw new Error('push-failed');
+  }
+  async function pullFromGist(token, gistId){
+    const res = await fetch('https://api.github.com/gists/' + gistId, { headers: gistHeaders(token) });
+    if(!res.ok) throw new Error('pull-failed');
+    const gist = await res.json();
+    const file = gist.files && gist.files[GIST_FILENAME];
+    if(!file) throw new Error('pull-missing-file');
+    let content = file.content;
+    if(file.truncated && file.raw_url){
+      content = await (await fetch(file.raw_url)).text();
+    }
+    return JSON.parse(content);
+  }
+
+  let pushTimer = null;
+  function scheduleSyncPush(){
+    if(!syncEnabled()) return;
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(() => {
+      pushToGist(syncConfig.token, syncConfig.gistId, data)
+        .then(() => setSyncStatus('Connected — last synced just now'))
+        .catch(() => setSyncStatus('Connected — last sync attempt failed, will retry'));
+    }, 1500);
+  }
+
+  async function syncPullAndAdopt(){
+    if(!syncEnabled()) return;
+    try{
+      const remote = await pullFromGist(syncConfig.token, syncConfig.gistId);
+      if(remote && Array.isArray(remote.strength) && Array.isArray(remote.cardio)){
+        const remoteTime = Number(remote.lastModified) || 0;
+        const localTime = Number(data.lastModified) || 0;
+        if(remoteTime > localTime){
+          data = {
+            strength: remote.strength,
+            cardio: remote.cardio,
+            planned: Array.isArray(remote.planned) ? remote.planned : [],
+            lastModified: remoteTime
+          };
+          persistLocalOnly();
+          renderAll();
+        }
+      }
+      setSyncStatus('Connected — last synced just now');
+    }catch(e){
+      setSyncStatus('Connected — last sync attempt failed, will retry');
+    }
+  }
+
+  async function connectSync(token){
+    setSyncStatus('Connecting…');
+    try{
+      let gistId = await findExistingGist(token);
+      if(!gistId) gistId = await createGist(token, data);
+      syncConfig = { token, gistId };
+      saveSyncConfig();
+      await syncPullAndAdopt();
+      showToast('Sync connected.');
+    }catch(e){
+      setSyncStatus('Could not connect — check the token and try again.');
+      showToast('Sync setup failed.');
+    }
+  }
+  function disconnectSync(){
+    clearSyncConfig();
+    setSyncStatus('Not connected');
+    showToast('Sync disconnected on this device.');
+  }
+
+  $('connectSyncBtn').addEventListener('click', async () => {
+    const token = $('syncTokenInput').value.trim();
+    if(!token){ setSyncStatus('Paste a token first.'); return; }
+    await connectSync(token);
+    refreshSyncPane();
+  });
+  $('disconnectSyncBtn').addEventListener('click', () => {
+    disconnectSync();
+    refreshSyncPane();
+  });
+  $('syncNowBtn').addEventListener('click', async () => {
+    if(!syncEnabled()) return;
+    setSyncStatus('Syncing…');
+    await syncPullAndAdopt();
+    try{
+      await pushToGist(syncConfig.token, syncConfig.gistId, data);
+      setSyncStatus('Connected — last synced just now');
+    }catch(e){
+      setSyncStatus('Connected — last sync attempt failed, will retry');
+    }
+  });
+
+  // ============================================================
   // INIT
   // ============================================================
   function renderAll(){
@@ -988,12 +1196,17 @@
   }
 
   loadData();
+  loadSyncConfig();
   $('strengthDate').value = todayISO();
   $('cardioDate').value = todayISO();
   if(!storageAvailable){
     showToast('This browser is blocking local storage — your entries won\'t be saved after you leave.');
   }
   renderAll();
+  // Render immediately with whatever's on this device, then quietly swap in
+  // a newer copy from the gist if one turns up -- keeps startup fast even on
+  // a slow connection.
+  if(syncEnabled()) syncPullAndAdopt();
 })();
 </script>
 
